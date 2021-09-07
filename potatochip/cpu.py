@@ -1,10 +1,13 @@
 from utils import (
 	SCREEN_WIDTH_LORES,
 	SCREEN_HEIGHT_LORES,
+	SCREEN_WIDTH_HIRES,
+	SCREEN_HEIGHT_HIRES,
 	PC_OFFSET
 )
 from random import randint
 from time import time
+import sys
 
 
 class CPU(object):
@@ -17,6 +20,7 @@ class CPU(object):
 		self.draw_flag = False
 		self.cycle_count = 0
 		self.last_time = time()
+		self.hires_mode = False
 
 		self.mem = [0] * 4096
 		self.video_mem = [0] * self.screen_w * self.screen_h
@@ -27,9 +31,14 @@ class CPU(object):
 		self.st = 0
 		self.stack = []
 		self.key = [0] * 16
+		self.flag = [0] * 16
 
-	def load_rom(self, path, offset=PC_OFFSET):
-		byte_array = open(path, "rb").read()
+	def load_rom(self, path, offset=PC_OFFSET, is_bin=True):
+		if is_bin:
+			with open(path, "rb") as f:
+				byte_array = f.read()
+		else:
+			byte_array = path
 
 		for i, byte in enumerate(byte_array):
 			self.mem[offset + i] = byte
@@ -39,6 +48,9 @@ class CPU(object):
 
 	def set_key(self, key, value):
 		self.key[key] = value
+
+	def get_mode(self):
+		return self.hires_mode
 
 	def cycle(self):
 		"""CPU speed is based on cycles per 1/60 sec"""
@@ -70,8 +82,14 @@ class CPU(object):
 
 	def op_lookup(self):
 		op_0_map = {
+			0x0C: self.op_00CN,             # SCD
 			0xE0: self.op_00E0,             # CLS
-			0xEE: self.op_00EE              # RET
+			0xEE: self.op_00EE,             # RET
+			0xFB: self.op_00FB,             # SCR
+			0xFC: self.op_00FC,             # SCL
+			0xFD: self.op_00FD,             # EXIT
+			0xFE: self.op_00FE,             # LOW
+			0xFF: self.op_00FF              # HIGH
 		}
 
 		op_8_map = {
@@ -98,9 +116,12 @@ class CPU(object):
 			0x18: self.op_FX18,             # LD
 			0x1E: self.op_FX1E,             # ADD
 			0x29: self.op_FX29,             # LD
+			0x30: self.op_FX30,             # LD
 			0x33: self.op_FX33,             # LD
 			0x55: self.op_FX55,             # LD
-			0x65: self.op_FX65              # LD
+			0x65: self.op_FX65,             # LD
+			0x75: self.op_FX75,             # LD
+			0x85: self.op_FX85              # LD
 		}
 
 		op_misc_map = {
@@ -119,7 +140,10 @@ class CPU(object):
 		}
 
 		if self.nibble == 0x0:
-			op_0_map[self.NN]()
+			if self.Y == 0xC:
+				op_0_map[self.Y]()
+			else:
+				op_0_map[self.NN]()
 		elif self.nibble == 0x8:
 			op_8_map[self.N]()
 		elif self.nibble == 0xE:
@@ -133,12 +157,69 @@ class CPU(object):
 # Opcodes
 ###########################################################
 
+	def op_00CN(self):
+		# Scroll down by N pixels
+		for r in range((self.screen_h-1) - self.N, -1, -1):
+			for c in range(self.screen_w):
+				self.video_mem[(self.screen_w * (r+self.N)) + c] = \
+					self.video_mem[(self.screen_w*r) + c]
+
+		# Fill the top N rows with blank pixels
+		for r in range(self.N):
+			for c in range(self.screen_w):
+				self.video_mem[(self.screen_w*r) + c] = 0
+
+		self.draw_flag = True
+
 	def op_00E0(self):
 		self.video_mem = [0] * self.screen_w * self.screen_h
 		self.draw_flag = True
 
 	def op_00EE(self):
 		self.PC = self.stack.pop()
+
+	def op_00FB(self):
+		# Scroll right by 4 pixels
+		for r in range((self.screen_w-1) - 4, -1, -1):
+			for c in range(self.screen_h):
+				self.video_mem[((self.screen_w*c) + 4) + r] = \
+					self.video_mem[(self.screen_w*c) + r]
+
+		# Fill the left 4 columns with blank pixels
+		for r in range(self.screen_h):
+			for c in range(4):
+				self.video_mem[(self.screen_w*r) + c] = 0
+
+		self.draw_flag = True
+
+	def op_00FC(self):
+		# Scroll left by 4 pixels
+		for r in range(4, self.screen_w):
+			for c in range(self.screen_h):
+				self.video_mem[((self.screen_w*c) - 4) + r] = \
+					self.video_mem[(self.screen_w*c) + r]
+
+		# Fill the right 4 columns with blank pixels
+		for r in range(self.screen_h):
+			for c in range(self.screen_w - 1, self.screen_w - 4 - 1, -1):
+				self.video_mem[(self.screen_w*r) + c] = 0
+
+		self.draw_flag = True
+
+	def op_00FD(self):
+		sys.exit()
+
+	def op_00FE(self):
+		self.screen_w = SCREEN_WIDTH_LORES
+		self.screen_h = SCREEN_HEIGHT_LORES
+		self.video_mem = [0] * self.screen_w * self.screen_h
+		self.hires_mode = False
+
+	def op_00FF(self):
+		self.screen_w = SCREEN_WIDTH_HIRES
+		self.screen_h = SCREEN_HEIGHT_HIRES
+		self.video_mem = [0] * self.screen_w * self.screen_h
+		self.hires_mode = True
 
 	def op_1NNN(self):
 		self.PC = self.NNN
@@ -215,13 +296,24 @@ class CPU(object):
 		x_pos = self.V[self.X]
 		y_pos = self.V[self.Y]
 		self.V[0xF] = 0
-		sprite = self.mem[self.I: self.I + self.N]
-		sprite_h = len(sprite)
-		sprite_l = 8
-		bit_checker = 0x80
+		if self.N == 0:
+			half_sprite = self.I
+			sprite_h = 16
+			sprite_l = 16
+			bit_checker = 0x8000
+		else:
+			sprite = self.mem[self.I: self.I + self.N]
+			sprite_h = len(sprite)
+			sprite_l = 8
+			bit_checker = 0x80
 
 		for y_sprite in range(sprite_h):
-			byte = sprite[y_sprite]
+			if self.N == 0:
+				# Each 2 byte schip sprite row is loaded in two halves
+				byte = (self.mem[half_sprite] << 8) | self.mem[half_sprite + 1]
+				half_sprite += 2
+			else:
+				byte = sprite[y_sprite]
 			y_coord = ((y_pos+y_sprite) % self.screen_h) * self.screen_w
 			if y_coord >= self.screen_h * self.screen_w:
 				continue
@@ -271,6 +363,10 @@ class CPU(object):
 	def op_FX29(self):
 		self.I = 5 * self.V[self.X]
 
+	def op_FX30(self):
+		"""Schip fonts are stored from memloc 0x50"""
+		self.I = (10*self.V[self.X]) + 0x50
+
 	def op_FX33(self):
 		self.mem[self.I] = self.V[self.X] // 100
 		self.mem[self.I + 1] = (self.V[self.X] % 100) // 10
@@ -283,3 +379,11 @@ class CPU(object):
 	def op_FX65(self):
 		for i in range(self.X + 1):
 			self.V[i] = self.mem[self.I + i]
+
+	def op_FX75(self):
+		for i in range(self.X + 1):
+			self.flag[i] = self.V[i]
+
+	def op_FX85(self):
+		for i in range(self.X + 1):
+			self.V[i] = self.flag[i]

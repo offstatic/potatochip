@@ -1,5 +1,9 @@
+from os import environ
+environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 from cpu import CPU
 from screen import Screen
+from utils import CHIP_FONT, OCTO_FONT
+from pathlib import Path
 import pygame
 import sys
 
@@ -32,6 +36,8 @@ class Emulator(object):
 
 	def init(self):
 		self.cpu.reset()
+		self.cpu.load_rom(CHIP_FONT, 0x0, False)
+		self.cpu.load_rom(OCTO_FONT, 0x50, False)
 
 		try:
 			self.cpu.load_rom(self.arg.ROM)
@@ -40,10 +46,11 @@ class Emulator(object):
 			sys.exit
 
 		# Create window after a valid file is loaded in memory
-		self.scr.init_screen()
+		self.scr.init_screen(f"PotatoChip - {Path(self.arg.ROM).name}")
 
 	def run(self):
 		running = True
+		self.paused = False
 
 		while running:
 			for event in pygame.event.get():
@@ -56,10 +63,16 @@ class Emulator(object):
 				if event.type == pygame.KEYUP:
 					if event.key in self.keymap:
 						self.cpu.set_key(self.keymap[event.key], 0)
-			self.step()
+
+			if not self.paused:
+				self.step()
 
 	def step(self):
-		self.cpu.cycle()
+		try:
+			self.cpu.cycle()
+		except IndexError:
+			self.paused = True
+			print("Error in rom, execution paused")
 		if self.cpu.draw_flag:
-			self.scr.draw(self.cpu.get_video_mem())
+			self.scr.draw(self.cpu.get_video_mem(), self.cpu.get_mode())
 			self.cpu.draw_flag = False
