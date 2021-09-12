@@ -35,8 +35,11 @@ class CPU(object):
 
 	def load_rom(self, path, offset=PC_OFFSET, is_bin=True):
 		if is_bin:
-			with open(path, "rb") as f:
+			f = open(path, "rb")
+			try:
 				byte_array = f.read()
+			finally:
+				f.close()
 		else:
 			byte_array = path
 
