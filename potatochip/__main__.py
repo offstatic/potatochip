@@ -20,6 +20,10 @@ def args():
 		"--scale", dest="scale", default=1,
 		type=float, help="Window size"
 	)
+	parser.add_argument(
+		"-d", "--dbg", dest="dbg", default=False,
+		action="store_true", help="Debugger"
+	)
 	return parser.parse_args()
 
 

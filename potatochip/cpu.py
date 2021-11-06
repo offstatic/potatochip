@@ -55,6 +55,19 @@ class CPU(object):
 	def get_mode(self):
 		return self.hires_mode
 
+	def dbg_log(self):
+		log = {
+			"V": self.V,
+			"PC": self.PC,
+			"I": self.I,
+			"dt": self.dt,
+			"st": self.st
+		}
+		return log
+
+	def get_mem(self):
+		return self.mem
+
 	def cycle(self):
 		"""CPU speed is based on cycles per 1/60 sec"""
 		if self.cycle_count < self.speed:
